@@ -1,0 +1,696 @@
+--- Cell 0 (markdown) ---
+# IAT 461 / 882 — Assignment 2: Modeling Phigma User Behavior
+
+**Name:** `[Your Name]`  
+**SFU ID:** `[Your ID]`  
+**Date:** `[Submission Date]`
+
+---
+
+> Before you start: read the full assignment README on Canvas.  
+> Run cells top-to-bottom. Do **not** skip cells — later cells depend on earlier ones.  
+> Every cell marked `# YOUR CODE HERE` must be completed.  
+> Every cell marked `**✏️ Your interpretation:**` must be filled in with your own words.
+
+
+--- Cell 1 (markdown) ---
+## Setup
+
+Run this cell first. It imports all libraries used throughout the notebook.
+
+--- Cell 2 (code) ---
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
+import seaborn as sns
+import scipy.stats as stats
+import statsmodels.api as sm
+import statsmodels.formula.api as smf
+import warnings
+warnings.filterwarnings('ignore')
+
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import (
+    confusion_matrix, classification_report,
+    roc_auc_score, roc_curve, ConfusionMatrixDisplay
+)
+from sklearn.preprocessing import StandardScaler
+
+# Plot style
+plt.rcParams.update({
+    'figure.dpi': 120,
+    'axes.spines.top': False,
+    'axes.spines.right': False,
+    'axes.titlesize': 13,
+    'axes.labelsize': 11,
+})
+ACCENT = '#e8925a'   # course accent colour
+
+print("Libraries loaded.")
+
+
+--- Cell 3 (markdown) ---
+---
+
+## Part A — Linear Regression: Did the AI Assistant Change User Behavior?
+
+**Dataset:** `phigma_ab_study.csv`  
+**Research question:** Does access to Phigma's AI design assistant increase whiteboard session duration among free-tier users?
+
+This is a **between-subjects experiment**. Users were randomly assigned to treatment (AI access) or control (no AI). We use OLS regression to estimate the effect of the treatment while controlling for other variables.
+
+> **No train/test split in this part.** We are doing statistical inference — explaining the outcome — not predicting future users.
+
+
+--- Cell 4 (markdown) ---
+### Load the data
+
+--- Cell 5 (code) ---
+df_ab = pd.read_csv('phigma_ab_study.csv')
+
+print(f"Shape: {df_ab.shape}")
+print(f"\nColumn types:\n{df_ab.dtypes}")
+print(f"\nFirst 3 rows:")
+df_ab.head(3)
+
+
+--- Cell 6 (code) ---
+# Summary statistics
+df_ab.describe(include='all').round(2)
+
+
+--- Cell 7 (code) ---
+# Missing values
+df_ab.isnull().sum()
+
+
+--- Cell 8 (markdown) ---
+### A1 — Exploratory Data Analysis
+
+#### A1.1 — Outcome distribution
+
+
+--- Cell 9 (code) ---
+BEGIN
+    Load target outcome variable
+
+    // 1. Normality & Transformation Visualizations
+    Initialize three-panel visual layout
+    
+    Draw histogram of raw outcome distribution
+    Transform outcome variable using natural logarithm
+    Draw histogram of log-transformed outcome distribution
+    Draw Q-Q plot comparing log-transformed distribution to a normal distribution
+    
+    Render visualizations
+
+    // 2. Statistical Diagnostics
+    Compute and output skewness for both raw and log-transformed distributions
+END
+
+--- Cell 10 (markdown) ---
+**✏️ Your interpretation (A1.1):**
+
+*Replace this text. Is the log-transformed outcome more normally distributed? How does the Q-Q plot support your conclusion? Will you use the raw or log outcome in your model?*
+
+
+--- Cell 11 (markdown) ---
+#### A1.2 — Examine the confounders
+
+--- Cell 12 (code) ---
+// Define the analytical pipeline
+BEGIN
+    Load AB testing dataset
+
+    // 1. Visual Exploratory Data Analysis
+    Initialize side-by-side visualization layouts
+    
+    Draw boxplot comparison of AI suggestion usage across experimental groups
+    Draw scatter plot comparing whiteboard activity density against session durations
+    
+    Optimize layout and display visualizations
+
+    // 2. Statistical Analysis
+    Calculate and print the correlation between whiteboard activity and session duration
+    Calculate and print descriptive statistics for AI suggestion usage grouped by treatment group
+END
+
+--- Cell 13 (markdown) ---
+**✏️ Your interpretation (A1.2):**
+
+*Replace this text. What do you notice about `ai_suggestions_used` across the two groups? What does the correlation between `whiteboard_actions_per_session` and the outcome suggest? Why should neither be included in your model?*
+
+
+--- Cell 14 (markdown) ---
+#### A1.3 — Predictor distributions and relationships with outcome
+
+--- Cell 15 (code) ---
+BEGIN
+    Define list of numerical predictor variables
+    Compute log-transformed outcome variable
+
+    Initialize visual grid layout (2 rows by N columns, where N is the number of predictors)
+
+    FOR each predictor variable:
+        // Top row: Univariate Analysis
+        Draw histogram to show distribution of the predictor
+        
+        // Bottom row: Bivariate Analysis
+        Draw scatter plot comparing predictor against log-transformed outcome
+        Calculate correlation coefficient between predictor and log-transformed outcome
+        Annotate plot with correlation coefficient
+    END FOR
+
+    Add global title and render layout
+END
+
+--- Cell 16 (code) ---
+BEGIN
+    Define list of categorical predictor variables
+    Initialize visual grid layout (1 row by N columns, where N is the number of categories)
+
+    FOR each categorical variable:
+        Retrieve unique category levels
+        
+        Group log-transformed outcome values by category levels
+        
+        Draw boxplots of log-transformed outcome grouped by category level
+        Rotate category axis labels for readability
+        
+        Label axis and set titles
+    END FOR
+
+    Render layout
+END
+
+--- Cell 17 (markdown) ---
+**✏️ Your interpretation (A1.3):**
+
+*3–5 sentences summarizing your EDA. Which predictors look most promising? Are any right-skewed and worth log-transforming before use as predictors? Which two features are you excluding and why?*
+
+
+--- Cell 18 (markdown) ---
+### A2 — Feature Engineering
+
+Prepare your feature matrix for OLS. Exclude the two problematic variables identified in A1.
+
+
+--- Cell 19 (code) ---
+BEGIN
+    Load baseline dataset
+
+    // 1. Encode Categorical Variables
+    Convert experimental group ('ab_group') into a binary integer indicator
+    Generate dummy indicators (one-hot encoding) for device types, omitting the first category
+    Generate dummy indicators (one-hot encoding) for regions, omitting the first category
+
+    // 2. Perform Optional Transformations
+    Log-transform right-skewed numerical predictors using log(x + 1) to avoid zero values
+
+    // 3. Assemble Modeling Dataset
+    Merge numerical characteristics, binary groups, and dummy indicators into matrix X
+    Set target vector y as the log-transformed outcome variable
+
+    // 4. Quality Control
+    Verify that there are no missing (null) values in feature matrix X
+    Inspect matrix dimensions and print a preview of the processed data
+END
+
+--- Cell 20 (markdown) ---
+**✏️ Your interpretation (A2):**
+
+*List your final features. For each one, write one sentence justifying its inclusion and any transformation applied.*
+
+
+--- Cell 21 (markdown) ---
+### A3 — OLS Regression
+
+
+--- Cell 22 (code) ---
+# YOUR CODE HERE
+# Add a constant for the intercept, then fit OLS
+X_const = sm.add_constant(X)
+model_ols = sm.OLS(y, X_const).fit()
+print(model_ols.summary())
+
+
+--- Cell 23 (markdown) ---
+#### A3.1 — Interpret the model
+
+--- Cell 24 (code) ---
+BEGIN
+    Input trained OLS regression model
+    Input experimental dataframe
+
+    // 1. Evaluate Model Fit
+    Display model's R-squared value to assess variance explained
+
+    // 2. Analyze Treatment Effect
+    Extract coefficient and significance (p-value) for the A/B testing variable
+    Convert the log-space treatment coefficient back to its scale in physical time (minutes) 
+    Display treatment effect size and statistical significance
+
+    // 3. Extract Significant Predictors
+    Filter all model coefficients where p-value < 0.05
+    FOR each significant variable:
+        Display variable name, its directional coefficient, and its p-value
+    END FOR
+END
+
+--- Cell 25 (markdown) ---
+**✏️ Results paragraph (A3):**
+
+*Write a results paragraph as if reporting in a research paper. Include:*
+- *The treatment effect estimate and its significance*
+- *R² and what it tells you about model fit*
+- *At least two other notable predictors and their direction*
+- *Whether the AI assistant's effect is practically meaningful (not just statistically significant)*
+
+
+--- Cell 26 (markdown) ---
+#### A3.2 — Regression diagnostics
+
+--- Cell 27 (code) ---
+BEGIN
+    Extract predictions and error terms (residuals) from regression model
+    Initialize a side-by-side diagnostic visualization layout
+
+    // Check for uniform variance (homoscedasticity)
+    Draw scatter plot of prediction values vs residuals
+    Overlay a horizontal zero-error baseline reference line
+    
+    // Check for normality of errors
+    Draw a Q-Q plot of residuals against a normal theoretical distribution
+
+    Render diagnostic plots
+END
+
+--- Cell 28 (markdown) ---
+**✏️ Your interpretation (A3.2):**
+
+*Do the residuals look randomly scattered around zero? Does the Q-Q plot suggest normally distributed errors? Note any patterns that concern you.*
+
+
+--- Cell 29 (markdown) ---
+### A4 — Exploratory Interaction Analysis
+
+The average treatment effect hides heterogeneity — the AI assistant may help some users more than others.
+
+
+--- Cell 30 (markdown) ---
+**✏️ State your hypothesis here (before writing any code):**
+
+*Which interaction are you testing? Which two variables? What is your theoretical reason for expecting this interaction? Which group do you predict will benefit more from the AI assistant?*
+
+
+--- Cell 31 (code) ---
+# YOUR CODE HERE
+# Step 1: Create the interaction term
+# Example: df_ab['ab_x_device_desktop'] = df_ab['ab_group_enc'] * df_ab['device_desktop']
+
+# Step 2: Add the interaction term to your feature matrix and refit OLS
+# X_interact = pd.concat([X_const, interaction_col], axis=1)
+# model_interact = sm.OLS(y, X_interact).fit()
+# print(model_interact.summary())
+
+
+--- Cell 32 (code) ---
+# YOUR CODE HERE
+# Visualize the interaction
+# Example: plot mean log(outcome) for treatment vs control, split by the moderating variable
+# Use a grouped bar chart or overlapping regression lines
+
+
+--- Cell 33 (markdown) ---
+**✏️ Your interpretation (A4):**
+
+*Was your hypothesis supported? What does the interaction coefficient tell you about which users benefit most from the AI assistant? What does this imply for how Phigma should roll out the feature?*
+
+
+--- Cell 34 (markdown) ---
+---
+
+## Part B — Logistic Regression: Who Converts?
+
+**Dataset:** `phigma_subscription.csv`  
+**Research question:** Which behavioral and demographic factors predict whether a free-tier user subscribes within 30 days?
+
+This dataset requires **feature engineering before modeling**. Several columns arrive as raw datetimes or aggregate counts that need transformation.
+
+
+--- Cell 35 (code) ---
+df_sub = pd.read_csv('phigma_subscription.csv')
+
+print(f"Shape: {df_sub.shape}")
+print(f"\nColumn types:\n{df_sub.dtypes}")
+df_sub.head(3)
+
+
+--- Cell 36 (code) ---
+df_sub.describe(include='all').round(2)
+
+
+--- Cell 37 (markdown) ---
+### B1 — Feature Engineering
+
+Derive the required features listed in the README before doing any modeling or EDA.
+
+
+--- Cell 38 (code) ---
+# YOUR CODE HERE
+
+# 1. Parse dates
+# df_sub['signup_date'] = pd.to_datetime(df_sub['signup_date'])
+# df_sub['first_session_date'] = pd.to_datetime(df_sub['first_session_date'])
+
+# 2. days_to_first_session
+# df_sub['days_to_first_session'] = (df_sub['first_session_date'] - df_sub['signup_date']).dt.days
+
+# 3. avg_session_duration_min — handle divide-by-zero explicitly
+# df_sub['avg_session_duration_min'] = ...
+
+# 4. is_weekend_signup (1 if Saturday=5 or Sunday=6)
+# df_sub['is_weekend_signup'] = df_sub['signup_date'].dt.weekday.isin([5, 6]).astype(int)
+
+# 5. One-hot encode device_type (drop first level)
+# device_dummies2 = pd.get_dummies(df_sub['device_type'], prefix='device', drop_first=True)
+
+# 6. One-hot encode referral_source (drop first level)
+# referral_dummies = pd.get_dummies(df_sub['referral_source'], prefix='ref', drop_first=True)
+
+# 7. Encode country_tier — ordinal or one-hot (justify below)
+# Option A (ordinal): df_sub['country_tier_enc'] = df_sub['country_tier'].map({'tier_1':1,'tier_2':2,'tier_3':3})
+# Option B (one-hot): pd.get_dummies(...)
+
+# 8. Assemble final feature matrix
+# Drop: user_id, signup_date, first_session_date, device_type, referral_source, country_tier, subscribed
+# X_sub = pd.concat([...], axis=1)
+# y_sub = df_sub['subscribed']
+
+# Confirm
+# print(f"Any inf: {np.isinf(X_sub.values).any()}")
+# print(f"Any NaN: {X_sub.isnull().any().any()}")
+# print(f"Feature matrix shape: {X_sub.shape}")
+# X_sub.head(3)
+
+
+--- Cell 39 (markdown) ---
+**✏️ Your interpretation (B1):**
+
+*For each engineered feature, one sentence: why might it predict subscription? Also describe how you handled the divide-by-zero edge case for `avg_session_duration_min`.*
+
+
+--- Cell 40 (markdown) ---
+### B2 — EDA for Subscription
+
+
+--- Cell 41 (code) ---
+# Subscription rate
+rate = df_sub['subscribed'].mean()
+n_pos = df_sub['subscribed'].sum()
+n_total = len(df_sub)
+print(f"Subscription rate: {rate:.1%}  ({n_pos} / {n_total})")
+print(f"Class balance — 0: {n_total - n_pos}  |  1: {n_pos}")
+
+
+--- Cell 42 (code) ---
+# YOUR CODE HERE
+# Visualize subscription rates across at least 3 features
+# Suggestions:
+#   - Bar chart: subscription rate by referral_source
+#   - Bar chart: subscription rate by country_tier
+#   - Boxplot: exports_30d distribution by subscribed (0 vs 1)
+#   - Bar chart: subscription rate by used_premium_feature_preview
+#   - Any other feature you find interesting
+
+fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+
+# Plot 1 — YOUR CODE
+# axes[0]: ...
+
+# Plot 2 — YOUR CODE
+# axes[1]: ...
+
+# Plot 3 — YOUR CODE
+# axes[2]: ...
+
+plt.tight_layout()
+plt.show()
+
+
+--- Cell 43 (code) ---
+# YOUR CODE HERE
+# Correlation matrix of numeric features (exclude user_id and binary outcome)
+# numeric_features = X_sub.select_dtypes(include='number').columns.tolist()
+# corr = X_sub[numeric_features].corr()
+# Plot as heatmap
+
+
+--- Cell 44 (markdown) ---
+**✏️ Your interpretation (B2):**
+
+*Which two or three features appear most strongly associated with subscription in your EDA? Are any findings counterintuitive? Note any features that appear highly correlated with each other — does this concern you?*
+
+
+--- Cell 45 (markdown) ---
+### B3 — Logistic Regression with statsmodels (Inferential)
+
+We fit on the **full dataset** here to maximize statistical power for inference.  
+No train/test split — the goal is to interpret coefficients, not evaluate prediction.
+
+
+--- Cell 46 (code) ---
+# YOUR CODE HERE
+# X_const_sub = sm.add_constant(X_sub)
+# model_logit = sm.Logit(y_sub, X_const_sub).fit()
+# print(model_logit.summary())
+
+
+--- Cell 47 (code) ---
+# YOUR CODE HERE
+# Compute odds ratios for all significant predictors (p < 0.05)
+# odds_ratios = np.exp(model_logit.params)
+# conf_int    = np.exp(model_logit.conf_int())
+# Combine into a readable table and display
+# Filter to significant only: p < 0.05
+
+
+--- Cell 48 (code) ---
+# YOUR CODE HERE
+# Visualize odds ratios as a horizontal bar chart (forest plot style)
+# Show confidence intervals if possible
+# Order bars by magnitude
+
+
+--- Cell 49 (markdown) ---
+**✏️ Results paragraph (B3):**
+
+*Interpret at least three odds ratios in plain English (e.g. "Users who previewed a premium feature were X times more likely to subscribe..."). Identify at least one predictor whose sign or magnitude surprised you and offer an explanation.*
+
+
+--- Cell 50 (markdown) ---
+### B4 — Logistic Regression with sklearn (Predictive)
+
+
+--- Cell 51 (code) ---
+# YOUR CODE HERE
+# Train/test split — use these exact parameters so Part C comparisons are valid
+# X_train, X_test, y_train, y_test = train_test_split(
+#     X_sub, y_sub, test_size=0.2, random_state=42, stratify=y_sub
+# )
+# print(f"Train: {X_train.shape}  |  Test: {X_test.shape}")
+# print(f"Train positive rate: {y_train.mean():.3f}  |  Test positive rate: {y_test.mean():.3f}")
+
+
+--- Cell 52 (code) ---
+# YOUR CODE HERE
+# Fit sklearn LogisticRegression
+# clf_lr = LogisticRegression(max_iter=1000, random_state=42)
+# clf_lr.fit(X_train, y_train)
+# y_pred_lr = clf_lr.predict(X_test)
+# y_prob_lr = clf_lr.predict_proba(X_test)[:, 1]
+
+
+--- Cell 53 (code) ---
+# YOUR CODE HERE
+# Confusion matrix heatmap
+# cm_lr = confusion_matrix(y_test, y_pred_lr)
+# disp = ConfusionMatrixDisplay(confusion_matrix=cm_lr, display_labels=['Not subscribed', 'Subscribed'])
+# fig, ax = plt.subplots(figsize=(5, 4))
+# disp.plot(ax=ax, cmap='Blues', colorbar=False)
+# plt.title('Logistic Regression — Confusion Matrix')
+# plt.show()
+
+
+--- Cell 54 (code) ---
+# YOUR CODE HERE
+# Classification report
+# print(classification_report(y_test, y_pred_lr, target_names=['Not subscribed', 'Subscribed']))
+# print(f"ROC-AUC: {roc_auc_score(y_test, y_prob_lr):.4f}")
+
+
+--- Cell 55 (code) ---
+# YOUR CODE HERE
+# ROC curve (save fpr_lr, tpr_lr for later comparison with Part C)
+# fpr_lr, tpr_lr, _ = roc_curve(y_test, y_prob_lr)
+# auc_lr = roc_auc_score(y_test, y_prob_lr)
+
+# fig, ax = plt.subplots(figsize=(6, 5))
+# ax.plot(fpr_lr, tpr_lr, color=ACCENT, lw=2, label=f'Logistic Regression (AUC = {auc_lr:.3f})')
+# ax.plot([0,1],[0,1], 'k--', lw=0.8)
+# ax.set_xlabel('False Positive Rate')
+# ax.set_ylabel('True Positive Rate')
+# ax.set_title('ROC Curve — Logistic Regression')
+# ax.legend()
+# plt.show()
+
+
+--- Cell 56 (markdown) ---
+**✏️ Your interpretation (B4):**
+
+*Which metric did you decide is most important given the class imbalance, and why? Interpret the confusion matrix: how many false negatives does the model produce? From Phigma's business perspective, what is the cost of a false negative (a user who would have subscribed but the model missed)?*
+
+
+--- Cell 57 (markdown) ---
+---
+
+## Part C — Your Model: Choose, Learn, Apply, Compare
+
+**Dataset:** `phigma_subscription.csv`  
+**Same train/test split as B4.** Do not re-split.
+
+
+--- Cell 58 (markdown) ---
+### C1 — Choose Your Model
+
+Available options: Decision Tree, Random Forest, Gradient Boosting, XGBoost, LightGBM, K-Nearest Neighbors, Naive Bayes, SVM, LDA, AdaBoost.
+
+
+--- Cell 59 (markdown) ---
+**✏️ Your chosen model:** `[Model name here]`
+
+**Conceptual explanation (write this before any code):**
+
+*3–5 sentences. How does this model learn from training data? What does it optimize? How is it structurally different from logistic regression? Why might it perform differently on this particular dataset given what you know about the features?*
+
+
+--- Cell 60 (markdown) ---
+### C2 — Fit and Evaluate
+
+
+--- Cell 61 (code) ---
+# YOUR CODE HERE
+# Import your chosen model, e.g.:
+# from sklearn.ensemble import RandomForestClassifier
+# from sklearn.tree import DecisionTreeClassifier
+# from sklearn.neighbors import KNeighborsClassifier
+# from sklearn.naive_bayes import GaussianNB
+# from sklearn.svm import SVC
+# from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+# from sklearn.ensemble import GradientBoostingClassifier, AdaBoostClassifier
+# from xgboost import XGBClassifier  # pip install xgboost
+# from lightgbm import LGBMClassifier  # pip install lightgbm
+
+# Fit with default hyperparameters
+# clf_c = YourModel(random_state=42)   # add random_state if supported
+# clf_c.fit(X_train, y_train)
+# y_pred_c = clf_c.predict(X_test)
+# y_prob_c = clf_c.predict_proba(X_test)[:, 1]  # omit if model has no predict_proba (e.g. SVM)
+
+
+--- Cell 62 (code) ---
+# YOUR CODE HERE
+# Confusion matrix
+
+
+--- Cell 63 (code) ---
+# YOUR CODE HERE
+# Classification report + ROC-AUC
+
+
+--- Cell 64 (code) ---
+# YOUR CODE HERE
+# ROC curve (save fpr_c, tpr_c, auc_c for comparison plot)
+
+
+--- Cell 65 (markdown) ---
+### C3 — Model Comparison
+
+
+--- Cell 66 (code) ---
+# YOUR CODE HERE
+# Summary comparison table
+# metrics = {
+#     'Model': ['Logistic Regression', 'YOUR MODEL NAME'],
+#     'ROC-AUC': [...],
+#     'F1 (class 1)': [...],
+#     'Precision (class 1)': [...],
+#     'Recall (class 1)': [...],
+# }
+# pd.DataFrame(metrics).set_index('Model').round(4)
+
+
+--- Cell 67 (code) ---
+# YOUR CODE HERE
+# Dual ROC curve plot
+# fig, ax = plt.subplots(figsize=(7, 5))
+# ax.plot(fpr_lr, tpr_lr, color=ACCENT, lw=2, label=f'Logistic Regression (AUC={auc_lr:.3f})')
+# ax.plot(fpr_c, tpr_c, color='steelblue', lw=2, label=f'YOUR MODEL (AUC={auc_c:.3f})')
+# ax.plot([0,1],[0,1], 'k--', lw=0.8, label='Random baseline')
+# ax.set_xlabel('False Positive Rate')
+# ax.set_ylabel('True Positive Rate')
+# ax.set_title('ROC Curve Comparison')
+# ax.legend()
+# plt.show()
+
+
+--- Cell 68 (markdown) ---
+**✏️ Comparison paragraph (C3):**
+
+*Which model performs better, and by how much? Explain *why* the performance difference occurred — based on what you know about how each model works and the structure of this dataset (non-linearities, class imbalance, number of features). If your model performed worse than logistic regression, that is a valid finding — explain why.*
+
+
+--- Cell 69 (markdown) ---
+### C4 — Bonus: Hyperparameter Tuning (+5 points)
+
+*Complete this section only if you want to attempt the bonus.*
+
+
+--- Cell 70 (code) ---
+# YOUR CODE HERE (BONUS)
+# from sklearn.model_selection import GridSearchCV  # or RandomizedSearchCV
+
+# Define a parameter grid relevant to your chosen model
+# param_grid = { ... }
+
+# Run cross-validated search on the TRAINING SET ONLY
+# search = GridSearchCV(YourModel(), param_grid, cv=5, scoring='roc_auc', n_jobs=-1)
+# search.fit(X_train, y_train)
+
+# print(f"Best parameters: {search.best_params_}")
+# print(f"Best CV AUC:     {search.best_score_:.4f}")
+
+# Evaluate tuned model on test set
+# y_pred_tuned = search.best_estimator_.predict(X_test)
+# y_prob_tuned = search.best_estimator_.predict_proba(X_test)[:, 1]
+# print(f"Tuned test AUC:  {roc_auc_score(y_test, y_prob_tuned):.4f}")
+# print(f"Default test AUC:{auc_c:.4f}")
+# print("Did tuning meaningfully improve results? [Your one sentence here]")
+
+
+--- Cell 71 (markdown) ---
+---
+
+## Submission Checklist
+
+Before submitting, confirm:
+
+- [ ] All `# YOUR CODE HERE` cells are completed and run without errors
+- [ ] All `**✏️ Your interpretation**` cells contain your own written analysis
+- [ ] The notebook runs top-to-bottom without errors (`Kernel > Restart & Run All`)
+- [ ] File is named `iat461_a2_[YourName]_[SFUid].ipynb`
+- [ ] PDF export is named `iat461_a2_[YourName]_[SFUid].pdf`
+- [ ] All AI-assisted code blocks include `#BEGIN` / `#END` disclosure comments
+
